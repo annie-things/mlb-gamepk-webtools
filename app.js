@@ -1,11 +1,8 @@
-cat > app.js << 'EOF'
-// BR home-team abbrev (incl. historical) -> MLB Stats API team.id
 const BR_TO_MLBID = {
   ARI:109, ATL:144, BAL:110, BOS:111, CHC:112, CHW:145, CIN:113, CLE:114,
   COL:115, DET:116, HOU:117, KCR:118, LAA:108, LAD:119, MIA:146, MIL:158,
   MIN:142, NYM:121, NYY:147, OAK:133, PHI:143, PIT:134, SDP:135, SEA:136,
   SFG:137, STL:138, TBR:139, TEX:140, TOR:141, WSN:120,
-  // historical / alternate codes BR has used
   FLA:146, MON:120, ANA:108, TBD:139, CAL:108, KCA:118,
 };
 
@@ -37,8 +34,6 @@ async function lookup(raw) {
   const games = (data.dates?.[0]?.games ?? []).filter(g => g.teams.home.team.id === mlbId);
   if (!games.length) throw new Error(`No games found for ${team} as home team on ${date}.`);
 
-  // BR's trailing digit: 0 = single game / game 1 of DH; 1 = game 2 of DH; 2 = game 3 (rare).
-  // MLB API's gameNumber is 1-indexed, so BR digit + 1 = MLB gameNumber.
   const wantNum = gameNum + 1;
   const game = games.find(g => g.gameNumber === wantNum) ?? (games.length === 1 ? games[0] : null);
   if (!game) {
@@ -59,4 +54,3 @@ form.addEventListener('submit', e => {
   e.preventDefault();
   lookup(input.value).catch(err => show(err.message, true));
 });
-EOF

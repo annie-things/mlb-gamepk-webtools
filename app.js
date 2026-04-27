@@ -22,6 +22,31 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function tvUrl(pk) {
+  return `https://www.mlb.com/tv/g${pk}`;
+}
+
+async function copyText(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Fallback for older browsers / non-HTTPS
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+  }
+  if (btn) {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = orig; }, 1200);
+  }
+}
+
 // --- Tabs ---
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -65,7 +90,11 @@ async function lookupBRID(raw) {
   show(`
     <div class="pk"><code>${game.gamePk}</code></div>
     <div class="meta">${away} @ ${home} — ${date}${game.gameNumber > 1 ? ` (game ${game.gameNumber})` : ''}</div>
-    <div class="meta"><a href="https://statsapi.mlb.com/api/v1.1/game/${game.gamePk}/feed/live" target="_blank" rel="noopener">live feed JSON</a></div>
+    <div class="meta">
+      <a href="${tvUrl(game.gamePk)}" target="_blank" rel="noopener">MLB.tv</a>
+      &middot;
+      <a href="https://statsapi.mlb.com/api/v1.1/game/${game.gamePk}/feed/live" target="_blank" rel="noopener">live feed JSON</a>
+    </div>
   `);
 }
 
@@ -90,21 +119,39 @@ async function listDate(date) {
     const dh = g.gameNumber > 1 ? ` (g${g.gameNumber})` : '';
     return `
       <tr>
-        <td class="pkcell"><a href="https://statsapi.mlb.com/api/v1.1/game/${g.gamePk}/feed/live" target="_blank" rel="noopener">${g.gamePk}</a></td>
+        <td class="pkcell">${g.gamePk}</td>
         <td>${away} @ ${home}${dh}</td>
         <td class="tag">${escapeHtml(type)}</td>
         <td class="tag">${status}</td>
+        <td>
+          <a class="tvlink" href="${tvUrl(g.gamePk)}" target="_blank" rel="noopener">Watch</a>
+          <button type="button" class="copybtn" data-pk="${g.gamePk}">Copy</button>
+        </td>
       </tr>
     `;
   }).join('');
 
+  const allUrls = games.map(g => tvUrl(g.gamePk)).join('\n');
+
   show(`
-    <div class="meta">${games.length} game${games.length === 1 ? '' : 's'} on ${date}</div>
+    <div class="meta" style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+      <span>${games.length} game${games.length === 1 ? '' : 's'} on ${date}</span>
+      <button type="button" id="copy-all" data-urls="${escapeHtml(allUrls)}">Copy all MLB.tv links</button>
+    </div>
     <table>
-      <thead><tr><th>game_pk</th><th>matchup</th><th>type</th><th>status</th></tr></thead>
+      <thead><tr><th>game_pk</th><th>matchup</th><th>type</th><th>status</th><th>MLB.tv</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `);
+
+  // Wire up copy buttons after rendering
+  out.querySelectorAll('.copybtn').forEach(b => {
+    b.addEventListener('click', () => copyText(tvUrl(b.dataset.pk), b));
+  });
+  const all = out.querySelector('#copy-all');
+  if (all) {
+    all.addEventListener('click', () => copyText(all.dataset.urls.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&'), all));
+  }
 }
 
 // --- Form handlers ---
@@ -120,5 +167,4 @@ document.getElementById('f-date').addEventListener('submit', e => {
   listDate(date).catch(err => show(escapeHtml(err.message), true));
 });
 
-// Default the date input to today
 document.getElementById('date').value = new Date().toISOString().slice(0, 10);

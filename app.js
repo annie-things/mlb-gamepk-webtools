@@ -6,8 +6,11 @@ const BR_TO_MLBID = {
   FLA:146, MON:120, ANA:108, TBD:139, CAL:108, KCA:118,
 };
 
-const form = document.getElementById('f');
-const input = document.getElementById('brid');
+const GAME_TYPE = {
+  R:'Regular', F:'Wild Card', D:'Division', L:'LCS', W:'World Series',
+  S:'Spring', A:'All-Star', E:'Exhibition', P:'Playoff',
+};
+
 const out = document.getElementById('out');
 
 function show(html, isErr) {
@@ -15,6 +18,22 @@ function show(html, isErr) {
   out.innerHTML = html;
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// --- Tabs ---
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.panel').forEach(p => {
+      p.classList.toggle('active', p.id === `panel-${btn.dataset.panel}`);
+    });
+    show('Pick a mode and submit.');
+  });
+});
+
+// --- BR ID lookup ---
 function parseBRID(raw) {
   const id = raw.trim().toUpperCase();
   const m = id.match(/^([A-Z]{2,3})(\d{4})(\d{2})(\d{2})(\d)$/);
@@ -24,7 +43,7 @@ function parseBRID(raw) {
   return { team, mlbId: BR_TO_MLBID[team], date: `${y}-${mo}-${d}`, gameNum: Number(gameNum) };
 }
 
-async function lookup(raw) {
+async function lookupBRID(raw) {
   const { team, mlbId, date, gameNum } = parseBRID(raw);
   show('Looking up…');
   const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${date}&teamId=${mlbId}`;
@@ -41,8 +60,8 @@ async function lookup(raw) {
     throw new Error(`Couldn't disambiguate. Candidates: ${list}.`);
   }
 
-  const away = game.teams.away.team.name;
-  const home = game.teams.home.team.name;
+  const away = escapeHtml(game.teams.away.team.name);
+  const home = escapeHtml(game.teams.home.team.name);
   show(`
     <div class="pk"><code>${game.gamePk}</code></div>
     <div class="meta">${away} @ ${home} — ${date}${game.gameNumber > 1 ? ` (game ${game.gameNumber})` : ''}</div>
@@ -50,7 +69,56 @@ async function lookup(raw) {
   `);
 }
 
-form.addEventListener('submit', e => {
+// --- Date list ---
+async function listDate(date) {
+  show('Loading…');
+  const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${date}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`MLB API returned HTTP ${res.status}.`);
+  const data = await res.json();
+  const games = data.dates?.[0]?.games ?? [];
+  if (!games.length) {
+    show(`No MLB games on ${date}.`);
+    return;
+  }
+
+  const rows = games.map(g => {
+    const away = escapeHtml(g.teams.away.team.name);
+    const home = escapeHtml(g.teams.home.team.name);
+    const status = escapeHtml(g.status?.detailedState ?? '');
+    const type = GAME_TYPE[g.gameType] ?? g.gameType ?? '';
+    const dh = g.gameNumber > 1 ? ` (g${g.gameNumber})` : '';
+    return `
+      <tr>
+        <td class="pkcell"><a href="https://statsapi.mlb.com/api/v1.1/game/${g.gamePk}/feed/live" target="_blank" rel="noopener">${g.gamePk}</a></td>
+        <td>${away} @ ${home}${dh}</td>
+        <td class="tag">${escapeHtml(type)}</td>
+        <td class="tag">${status}</td>
+      </tr>
+    `;
+  }).join('');
+
+  show(`
+    <div class="meta">${games.length} game${games.length === 1 ? '' : 's'} on ${date}</div>
+    <table>
+      <thead><tr><th>game_pk</th><th>matchup</th><th>type</th><th>status</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `);
+}
+
+// --- Form handlers ---
+document.getElementById('f-brid').addEventListener('submit', e => {
   e.preventDefault();
-  lookup(input.value).catch(err => show(err.message, true));
+  lookupBRID(document.getElementById('brid').value).catch(err => show(escapeHtml(err.message), true));
 });
+
+document.getElementById('f-date').addEventListener('submit', e => {
+  e.preventDefault();
+  const date = document.getElementById('date').value;
+  if (!date) return;
+  listDate(date).catch(err => show(escapeHtml(err.message), true));
+});
+
+// Default the date input to today
+document.getElementById('date').value = new Date().toISOString().slice(0, 10);
